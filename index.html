@@ -1,0 +1,1293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Clay's Cow Hunt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+  /* MudWing palette: brown-biased dark ground, amber underscales, one ember accent.
+     Single committed theme — this is a lit game screen in a dark room. */
+  :root{
+    --mud-deep:#21150C;
+    --mud-mid:#33200F;
+    --mud-frame:#4A2D15;
+    --amber:#E6A93C;
+    --ember:#FF7A2F;
+    --parchment:#F4E4C4;
+    --parchment-dim:rgba(244,228,196,.62);
+    --display:'Cinzel', Georgia, 'Times New Roman', serif;
+    --ui:'Barlow Condensed', 'Trebuchet MS', Verdana, sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{
+    margin:0;padding:0;min-height:100%;
+    background:var(--mud-deep);
+    color:var(--parchment);
+    font-family:var(--ui);
+    overflow:hidden;
+    touch-action:none;
+  }
+  #wrap{
+    position:fixed;inset:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;padding:16px;
+    background:radial-gradient(ellipse at 50% 22%, #43290F 0%, var(--mud-deep) 62%);
+  }
+  header{text-align:center;display:flex;flex-direction:column;gap:2px}
+  .eyebrow{
+    font-family:var(--display);
+    font-size:11px;font-weight:600;
+    letter-spacing:.34em;text-transform:uppercase;
+    color:var(--amber);opacity:.8;
+  }
+  h1{
+    margin:0;
+    font-family:var(--display);
+    font-size:clamp(20px,3.4vw,30px);font-weight:700;
+    letter-spacing:.06em;
+    color:var(--parchment);
+    text-wrap:balance;
+  }
+  #stage{position:relative;line-height:0}
+  canvas{
+    display:block;
+    background:#8fd0f0;
+    border:7px solid var(--mud-frame);
+    border-radius:12px;
+    box-shadow:0 0 0 1px rgba(230,169,60,.35), 0 22px 60px rgba(0,0,0,.65);
+  }
+  /* the keycap legend: what your hands do, in the order you learn it */
+  #legend{
+    display:flex;flex-wrap:wrap;justify-content:center;
+    gap:6px 18px;
+    max-width:900px;
+    font-size:14px;font-weight:500;
+    color:var(--parchment-dim);
+    line-height:1.2;
+  }
+  #legend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  kbd{
+    font-family:var(--ui);
+    font-size:12px;font-weight:700;letter-spacing:.06em;
+    color:var(--parchment);
+    background:var(--mud-mid);
+    border:1px solid rgba(230,169,60,.42);
+    border-bottom-width:2px;
+    border-radius:5px;
+    padding:2px 7px;
+  }
+  #legend .hot{color:var(--ember);font-weight:700}
+  /* touch controls */
+  #touch{position:absolute;inset:0;display:none;pointer-events:none}
+  #touch.on{display:block}
+  .tbtn{
+    position:absolute;pointer-events:auto;
+    background:rgba(244,228,196,.16);
+    border:2px solid rgba(244,228,196,.42);
+    border-radius:50%;
+    width:66px;height:66px;
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--ui);
+    font-size:24px;font-weight:700;color:var(--parchment);
+    user-select:none;
+  }
+  .tbtn:active{background:rgba(255,122,47,.55)}
+  .wide{width:88px;height:56px;border-radius:14px;font-size:15px;letter-spacing:.08em}
+  @media (prefers-reduced-motion: reduce){ *{animation:none !important} }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <div class="eyebrow">Wings of Fire &middot; the Mud Kingdom</div>
+    <h1>Clay's Cow Hunt</h1>
+  </header>
+  <div id="stage">
+    <canvas id="game" width="960" height="540"></canvas>
+    <div id="touch">
+      <div class="tbtn" id="bL" style="left:18px;bottom:80px">&#8592;</div>
+      <div class="tbtn" id="bR" style="left:100px;bottom:80px">&#8594;</div>
+      <div class="tbtn" id="bU" style="left:59px;bottom:158px">&#8593;</div>
+      <div class="tbtn" id="bD" style="left:59px;bottom:14px">&#8595;</div>
+      <div class="tbtn wide" id="bA" style="right:18px;bottom:96px">CHOMP</div>
+      <div class="tbtn wide" id="bF" style="right:18px;bottom:26px">FIRE</div>
+    </div>
+  </div>
+  <div id="legend">
+    <span><kbd>&larr;</kbd><kbd>&rarr;</kbd> fly</span>
+    <span><kbd>&uarr;</kbd> flap up</span>
+    <span><kbd>&darr;</kbd> dive</span>
+    <span>fly into a cow to grab it</span>
+    <span><kbd>Space</kbd> chomp</span>
+    <span><kbd>F</kbd> <span class="hot">breathe fire</span> (only after eating)</span>
+  </div>
+</div>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   CLAY'S COW HUNT  —  a Wings of Fire game
+   You are Clay, the MudWing. The cows of the Sky Kingdom
+   foothills are not safe. Eat 12 to win.
+   ============================================================ */
+
+/* two faces: carved-stone display for prophecy-sized moments,
+   narrow grotesque for everything the player reads at a glance */
+var FD = "'Cinzel', Georgia, 'Times New Roman', serif";
+var FU = "'Barlow Condensed', 'Trebuchet MS', Verdana, sans-serif";
+
+var cvs = document.getElementById('game');
+var ctx = cvs.getContext('2d');
+var W = cvs.width, H = cvs.height;
+
+var GROUND   = 468;      // y of grass line
+var WORLD_W  = 4200;     // world is wider than the screen
+var GOAL     = 12;       // cows needed to win
+
+/* ---------- tiny helpers ---------- */
+function rand(a,b){ return a + Math.random()*(b-a); }
+function irand(a,b){ return Math.floor(rand(a,b+1)); }
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function dist(ax,ay,bx,by){ var dx=ax-bx, dy=ay-by; return Math.sqrt(dx*dx+dy*dy); }
+function aabb(a,b){
+  return Math.abs(a.x-b.x) < (a.w+b.w)/2 && Math.abs(a.y-b.y) < (a.h+b.h)/2;
+}
+
+/* ---------- sound (tiny WebAudio blips) ---------- */
+var AC = null;
+function audio(){
+  if(!AC){ try{ AC = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ AC=false; } }
+  return AC;
+}
+function beep(freq, dur, type, vol, slideTo){
+  var a = audio(); if(!a) return;
+  var o = a.createOscillator(), g = a.createGain();
+  o.type = type||'square';
+  o.frequency.setValueAtTime(freq, a.currentTime);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo), a.currentTime+dur);
+  g.gain.setValueAtTime(vol||0.08, a.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, a.currentTime+dur);
+  o.connect(g); g.connect(a.destination);
+  o.start(); o.stop(a.currentTime+dur+0.02);
+}
+function noise(dur, vol){
+  var a = audio(); if(!a) return;
+  var len = Math.floor(a.sampleRate*dur);
+  var buf = a.createBuffer(1, len, a.sampleRate);
+  var d = buf.getChannelData(0);
+  for(var i=0;i<len;i++) d[i] = (Math.random()*2-1) * (1 - i/len);
+  var src = a.createBufferSource(); src.buffer = buf;
+  var g = a.createGain(); g.gain.value = vol||0.12;
+  src.connect(g); g.connect(a.destination); src.start();
+}
+var SFX = {
+  flap:  function(){ beep(180,0.09,'sine',0.05,120); },
+  moo:   function(){ beep(220,0.28,'sawtooth',0.07,140); },
+  grab:  function(){ beep(420,0.09,'square',0.09,700); },
+  chomp: function(){ noise(0.14,0.18); beep(120,0.16,'square',0.10,60); },
+  fire:  function(){ noise(0.22,0.14); beep(300,0.2,'sawtooth',0.06,90); },
+  hurt:  function(){ beep(160,0.25,'square',0.12,70); },
+  heal:  function(){ beep(520,0.12,'sine',0.08,880); },
+  win:   function(){ [523,659,784,1047].forEach(function(f,i){ setTimeout(function(){beep(f,0.18,'triangle',0.10);}, i*130); }); },
+  lose:  function(){ [400,320,250,180].forEach(function(f,i){ setTimeout(function(){beep(f,0.25,'sawtooth',0.10);}, i*160); }); }
+};
+
+/* ---------- input ---------- */
+var keys = {};
+var pressed = {};
+window.addEventListener('keydown', function(e){
+  var k = e.key.toLowerCase();
+  if(!keys[k]) pressed[k] = true;
+  keys[k] = true;
+  if([' ','arrowup','arrowdown','arrowleft','arrowright'].indexOf(k)>=0) e.preventDefault();
+  if(audio() && AC.state === 'suspended') AC.resume();
+});
+window.addEventListener('keyup', function(e){ keys[e.key.toLowerCase()] = false; });
+
+function held(){ for(var i=0;i<arguments.length;i++){ if(keys[arguments[i]]) return true; } return false; }
+function tapped(k){ if(pressed[k]){ pressed[k]=false; return true; } return false; }
+
+/* touch buttons */
+var isTouch = ('ontouchstart' in window);
+if(isTouch){
+  document.getElementById('touch').className = 'on';
+  var map = { bL:'arrowleft', bR:'arrowright', bU:'arrowup', bD:'arrowdown', bA:' ', bF:'f' };
+  Object.keys(map).forEach(function(id){
+    var el = document.getElementById(id), k = map[id];
+    function on(e){ e.preventDefault(); if(!keys[k]) pressed[k]=true; keys[k]=true; if(audio()&&AC.state==='suspended')AC.resume(); }
+    function off(e){ e.preventDefault(); keys[k]=false; }
+    el.addEventListener('touchstart', on);
+    el.addEventListener('touchend', off);
+    el.addEventListener('touchcancel', off);
+  });
+  cvs.addEventListener('touchstart', function(e){ if(state!=='play'){ pressed['enter']=true; } });
+}
+
+/* clicking the screen also starts a hunt (and gives the page keyboard focus,
+   which matters when the game is embedded in a page) */
+cvs.addEventListener('mousedown', function(){
+  try{ window.focus(); }catch(e){}
+  if(audio() && AC.state === 'suspended') AC.resume();
+  if(state !== 'play') pressed['enter'] = true;
+});
+
+/* scale canvas to window */
+function fit(){
+  var s = Math.min(window.innerWidth/(W+40), (window.innerHeight-150)/(H+20), 1.6);
+  s = Math.max(s, 0.3);
+  cvs.style.width  = Math.floor(W*s)+'px';
+  cvs.style.height = Math.floor(H*s)+'px';
+  var t = document.getElementById('touch');
+  t.style.width = cvs.style.width; t.style.height = cvs.style.height;
+}
+window.addEventListener('resize', fit); fit();
+
+/* ============================================================
+   WORLD STATE
+   ============================================================ */
+var state = 'title';   // title | play | win | lose
+var cam = {x:0};
+var clay, cows, scavs, skywings, fires, spears, parts, floats, mudpools, scenery;
+var eaten, score, hunger, timeAlive, msg, msgT, shake, starveT, warnedHunger;
+
+function makeScenery(){
+  scenery = [];
+  for(var x=60; x<WORLD_W; x += irand(150,320)){
+    scenery.push({ x:x, t: Math.random()<0.62?'tree':'bush', s: rand(0.8,1.35), c: irand(0,2) });
+  }
+  mudpools = [];
+  for(var i=0;i<5;i++){
+    mudpools.push({ x: 350 + i*rand(700,860), w: rand(150,230) });
+  }
+}
+
+function spawnCow(nearX){
+  var x;
+  var tries = 0;
+  do{
+    x = (nearX===undefined) ? rand(120, WORLD_W-120)
+                            : clamp(nearX + (Math.random()<0.5?-1:1)*rand(900,1900), 120, WORLD_W-120);
+    tries++;
+  } while(clay && Math.abs(x - clay.x) < 850 && tries < 30);
+  cows.push({
+    x:x, y:GROUND-20, w:56, h:38,
+    vx: Math.random()<0.5?-0.7:0.7,
+    panic:0, roasted:0, chew:0, alive:true, wobble:rand(0,6.28)
+  });
+}
+
+function spawnScav(){
+  var x, tries = 0;
+  do{ x = rand(200, WORLD_W-200); tries++; }
+  while(clay && Math.abs(x - clay.x) < 700 && tries < 30);
+  scavs.push({
+    x: x, y: GROUND-22, w:22, h:44,
+    vx: Math.random()<0.5?-0.55:0.55, cool: rand(1,3), hp:2, hurt:0
+  });
+}
+
+function spawnSky(){
+  var x = clay ? clay.x + (Math.random()<0.5?-1:1)*rand(700,1500) : rand(0,WORLD_W);
+  skywings.push({
+    x: clamp(x,100,WORLD_W-100), y: rand(90,230), w:52, h:32,
+    vx: Math.random()<0.5?-2:2, vy:0, hp:3, hurt:0,
+    baseY: rand(90,230), diveT:0, flap: rand(0,6.28), stun:0, recover:0
+  });
+}
+
+function reset(){
+  clay = {
+    x: 300, y: 250, vx:0, vy:0, w:56, h:34,
+    face: 1, flap: 0, health: 5, maxHealth: 5,
+    invuln: 2.5, carrying: null, fireTime: 0, chompT: 0,
+    fastDive: 0, mudT: 0
+  };
+  cows = []; scavs = []; skywings = []; fires = []; spears = [];
+  parts = []; floats = [];
+  eaten = 0; score = 0; hunger = 100; timeAlive = 0;
+  starveT = 0; warnedHunger = false;
+  msg = ''; msgT = 0; shake = 0;
+  makeScenery();
+  for(var i=0;i<5;i++) spawnCow();
+  for(var j=0;j<3;j++) spawnScav();
+  spawnSky();
+}
+
+function say(text, col){
+  msg = text; msgT = 2.2; msgCol = col || '#ffe9a8';
+}
+var msgCol = '#ffe9a8';
+
+function pop(x,y,txt,col){
+  floats.push({x:x,y:y,txt:txt,col:col||'#fff',life:1.1});
+}
+function puff(x,y,n,col,spd){
+  for(var i=0;i<n;i++){
+    parts.push({
+      x:x, y:y,
+      vx: rand(-1,1)*(spd||2.5), vy: rand(-1,0.4)*(spd||2.5),
+      life: rand(0.3,0.8), max:0.8, r: rand(2,6),
+      col: col||'#ffd98a', grav: 0.06
+    });
+  }
+}
+
+/* ============================================================
+   DRAWING — dragons, cows, people
+   ============================================================ */
+
+function drawWing(fl, colA, colB, back){
+  // fl: -1..1 flap value
+  ctx.save();
+  ctx.rotate(fl*0.55 + (back?0.25:0));
+  ctx.fillStyle = back ? colB : colA;
+  ctx.beginPath();
+  ctx.moveTo(-4,-4);
+  ctx.quadraticCurveTo(-18,-40, 14,-46);
+  ctx.quadraticCurveTo(44,-40, 46,-4);
+  ctx.quadraticCurveTo(26,4, 8,2);
+  ctx.closePath();
+  ctx.fill();
+  // wing ribs
+  ctx.strokeStyle = 'rgba(0,0,0,.18)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0,-2); ctx.lineTo(12,-42);
+  ctx.moveTo(0,-2); ctx.lineTo(30,-34);
+  ctx.moveTo(0,-2); ctx.lineTo(42,-12);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// generic dragon; c = {body, belly, wing, wingBack, horn, eye}
+function drawDragon(x, y, face, flapPhase, s, c, glow){
+  var fl = Math.sin(flapPhase);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(face*s, s);
+
+  if(glow){
+    ctx.shadowColor = glow; ctx.shadowBlur = 22;
+  }
+
+  // ---- back wing
+  ctx.save(); ctx.translate(-4,-8); drawWing(fl*0.8, c.wing, c.wingBack, true); ctx.restore();
+
+  // ---- tail
+  ctx.fillStyle = c.body;
+  ctx.beginPath();
+  ctx.moveTo(-16,-8);
+  ctx.quadraticCurveTo(-46,-6+fl*3, -70, 6+fl*7);
+  ctx.quadraticCurveTo(-46, 10, -14, 8);
+  ctx.closePath(); ctx.fill();
+  // tail spade
+  ctx.beginPath();
+  ctx.moveTo(-66, 4+fl*7);
+  ctx.lineTo(-84, -4+fl*9);
+  ctx.lineTo(-80, 12+fl*8);
+  ctx.closePath(); ctx.fill();
+
+  // ---- back legs
+  ctx.fillStyle = c.wingBack;
+  ctx.beginPath(); ctx.ellipse(-8, 14, 8, 6, 0.3, 0, 7); ctx.fill();
+
+  // ---- body
+  ctx.fillStyle = c.body;
+  ctx.beginPath(); ctx.ellipse(0, 0, 28, 18, 0, 0, 7); ctx.fill();
+  // belly scales
+  ctx.fillStyle = c.belly;
+  ctx.beginPath(); ctx.ellipse(3, 7, 21, 9, 0, 0, 7); ctx.fill();
+
+  // ---- neck + head
+  ctx.fillStyle = c.body;
+  ctx.beginPath();
+  ctx.moveTo(14,-8);
+  ctx.quadraticCurveTo(34,-18, 42,-22);
+  ctx.lineTo(48,-10);
+  ctx.quadraticCurveTo(34,-4, 20, 4);
+  ctx.closePath(); ctx.fill();
+  // head
+  ctx.beginPath(); ctx.ellipse(48,-20, 15, 11, -0.15, 0, 7); ctx.fill();
+  // snout
+  ctx.beginPath();
+  ctx.moveTo(56,-24); ctx.lineTo(72,-19); ctx.lineTo(70,-12); ctx.lineTo(54,-12);
+  ctx.closePath(); ctx.fill();
+  // nostril
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.beginPath(); ctx.arc(67,-19,1.6,0,7); ctx.fill();
+  // horns
+  ctx.fillStyle = c.horn;
+  ctx.beginPath(); ctx.moveTo(42,-29); ctx.lineTo(36,-44); ctx.lineTo(48,-31); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(50,-29); ctx.lineTo(50,-42); ctx.lineTo(56,-28); ctx.closePath(); ctx.fill();
+  // eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(53,-23, 4.2, 3.4, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = c.eye;
+  ctx.beginPath(); ctx.arc(54.5,-23, 2, 0, 7); ctx.fill();
+
+  // ---- front legs
+  ctx.fillStyle = c.body;
+  ctx.beginPath(); ctx.ellipse(14, 15, 9, 7, -0.2, 0, 7); ctx.fill();
+  ctx.fillStyle = c.horn;
+  ctx.beginPath(); ctx.moveTo(20,19); ctx.lineTo(26,22); ctx.lineTo(19,23); ctx.closePath(); ctx.fill();
+
+  // ---- front wing
+  ctx.save(); ctx.translate(2,-10); drawWing(fl, c.wing, c.wingBack, false); ctx.restore();
+
+  ctx.restore();
+}
+
+var CLAY_COLORS = {
+  body:'#8a5a30', belly:'#e0ad4e', wing:'#a06a38', wingBack:'#6d4522',
+  horn:'#f2d79a', eye:'#3b2410'
+};
+var SKY_COLORS = {
+  body:'#c9432c', belly:'#f0a23a', wing:'#e05a34', wingBack:'#9c3220',
+  horn:'#ffe0a0', eye:'#2b1008'
+};
+
+function drawCow(c){
+  var x = c.x - cam.x, y = c.y;
+  var bob = Math.sin(c.wobble)*1.6;
+  var f = c.vx < 0 ? -1 : 1;
+  ctx.save();
+  ctx.translate(x, y + bob);
+  ctx.scale(f,1);
+
+  var bodyCol  = c.roasted>0 ? '#6b3f22' : '#fdfdf7';
+  var patchCol = c.roasted>0 ? '#4a2a14' : '#3a3a3a';
+
+  // legs
+  ctx.fillStyle = c.roasted>0 ? '#5a3418' : '#e8e8e0';
+  var swing = Math.sin(c.wobble*2)*3;
+  ctx.fillRect(-16, 12, 6, 14+swing*0.3);
+  ctx.fillRect( -2, 12, 6, 14-swing*0.3);
+  ctx.fillRect( 10, 12, 6, 14+swing*0.3);
+  ctx.fillRect( 20, 12, 6, 14-swing*0.3);
+  // body
+  ctx.fillStyle = bodyCol;
+  ctx.beginPath(); ctx.ellipse(2, 0, 26, 15, 0, 0, 7); ctx.fill();
+  // patches
+  ctx.fillStyle = patchCol;
+  ctx.beginPath(); ctx.ellipse(-6,-3, 8, 6, 0.3, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(13, 4, 6, 4.5, -0.2, 0, 7); ctx.fill();
+  // tail
+  ctx.strokeStyle = bodyCol; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(-24,-6);
+  ctx.quadraticCurveTo(-34,-2, -31, 10); ctx.stroke();
+  ctx.fillStyle = patchCol;
+  ctx.beginPath(); ctx.arc(-31,12,3,0,7); ctx.fill();
+  // head
+  ctx.fillStyle = bodyCol;
+  ctx.beginPath(); ctx.ellipse(30,-6, 12, 9.5, 0.15, 0, 7); ctx.fill();
+  // snout
+  ctx.fillStyle = c.roasted>0 ? '#7a4a26' : '#f2c3c3';
+  ctx.beginPath(); ctx.ellipse(40,-2, 6, 5, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.beginPath(); ctx.arc(41,-3,1.2,0,7); ctx.fill();
+  // ear + horn
+  ctx.fillStyle = bodyCol;
+  ctx.beginPath(); ctx.ellipse(23,-13, 5, 3, -0.6, 0, 7); ctx.fill();
+  ctx.fillStyle = '#e3cf9a';
+  ctx.beginPath(); ctx.moveTo(30,-14); ctx.lineTo(33,-20); ctx.lineTo(35,-13); ctx.closePath(); ctx.fill();
+  // eye
+  ctx.fillStyle = '#231a10';
+  if(c.panic > 0){
+    ctx.beginPath(); ctx.arc(34,-8, 2.6, 0, 7); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(34.8,-8.8,1,0,7); ctx.fill();
+  } else {
+    ctx.fillRect(32,-9, 3, 2);
+  }
+  ctx.restore();
+
+  // roasted smoke
+  if(c.roasted>0 && Math.random()<0.25){
+    parts.push({x:c.x, y:c.y-16, vx:rand(-.3,.3), vy:rand(-1,-.4),
+      life:0.9, max:0.9, r:rand(3,7), col:'rgba(90,90,90,.7)', grav:-0.01});
+  }
+  if(c.panic>0){
+    // motion lines
+    ctx.fillStyle='rgba(255,255,255,.5)';
+    for(var i=0;i<3;i++) ctx.fillRect(x - f*(34+i*8), y-8+i*6, 6, 2);
+  }
+}
+
+function drawScav(s){
+  var x = s.x - cam.x, y = s.y;
+  var f = s.vx<0?-1:1;
+  ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
+  if(s.hurt>0){ ctx.globalAlpha = 0.5 + 0.5*Math.sin(s.hurt*40); }
+  // legs
+  ctx.fillStyle = '#54402c';
+  var sw = Math.sin(s.x*0.08)*3;
+  ctx.fillRect(-6, 8, 5, 14+sw*0.3);
+  ctx.fillRect( 2, 8, 5, 14-sw*0.3);
+  // body
+  ctx.fillStyle = '#7d6444';
+  ctx.fillRect(-8,-10, 16, 20);
+  // head
+  ctx.fillStyle = '#d9a877';
+  ctx.beginPath(); ctx.arc(0,-17, 7, 0, 7); ctx.fill();
+  // hair
+  ctx.fillStyle = '#3b2a18';
+  ctx.beginPath(); ctx.arc(0,-19, 7, Math.PI, 0); ctx.fill();
+  // spear
+  ctx.strokeStyle = '#8a6b3d'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(8, 8); ctx.lineTo(14,-24); ctx.stroke();
+  ctx.fillStyle = '#cfd4da';
+  ctx.beginPath(); ctx.moveTo(14,-24); ctx.lineTo(11,-30); ctx.lineTo(17,-29); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+/* ============================================================
+   BACKGROUND
+   ============================================================ */
+function drawSky(){
+  var g = ctx.createLinearGradient(0,0,0,GROUND);
+  g.addColorStop(0,'#5fb8e8');
+  g.addColorStop(0.55,'#a5dcf3');
+  g.addColorStop(1,'#e2f3d9');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,GROUND+4);
+  // sun
+  ctx.fillStyle = 'rgba(255,245,200,.85)';
+  ctx.beginPath(); ctx.arc(W-110, 78, 40, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(255,245,200,.22)';
+  ctx.beginPath(); ctx.arc(W-110, 78, 66, 0, 7); ctx.fill();
+}
+
+function drawClouds(){
+  ctx.fillStyle = 'rgba(255,255,255,.82)';
+  for(var i=0;i<14;i++){
+    var wx = (i*430 + 120);
+    var x = wx - cam.x*0.35;
+    x = ((x % (WORLD_W*0.4)) + WORLD_W*0.4) % (WORLD_W*0.4) - 200;
+    var y = 50 + (i%4)*46;
+    var s = 0.7 + (i%3)*0.3;
+    ctx.beginPath();
+    ctx.ellipse(x, y, 44*s, 17*s, 0,0,7);
+    ctx.ellipse(x+30*s, y-9*s, 30*s, 15*s, 0,0,7);
+    ctx.ellipse(x-32*s, y+3*s, 26*s, 12*s, 0,0,7);
+    ctx.fill();
+  }
+}
+
+function drawMountains(){
+  // far range
+  ctx.fillStyle = '#8fa8bb';
+  ctx.beginPath(); ctx.moveTo(0, GROUND);
+  for(var i=0;i<=12;i++){
+    var bx = i*380 - (cam.x*0.25 % 380) - 190;
+    ctx.lineTo(bx, GROUND);
+    ctx.lineTo(bx+190, GROUND - 190 - ((i*37)%70));
+    ctx.lineTo(bx+380, GROUND);
+  }
+  ctx.lineTo(W, GROUND); ctx.closePath(); ctx.fill();
+  // near range
+  ctx.fillStyle = '#6d8a70';
+  ctx.beginPath(); ctx.moveTo(0, GROUND);
+  for(var j=0;j<=10;j++){
+    var cx2 = j*300 - (cam.x*0.5 % 300) - 150;
+    ctx.lineTo(cx2, GROUND);
+    ctx.lineTo(cx2+150, GROUND - 110 - ((j*53)%50));
+    ctx.lineTo(cx2+300, GROUND);
+  }
+  ctx.lineTo(W, GROUND); ctx.closePath(); ctx.fill();
+}
+
+function drawGround(){
+  // grass
+  var g = ctx.createLinearGradient(0,GROUND,0,H);
+  g.addColorStop(0,'#69ab4d');
+  g.addColorStop(1,'#3f7331');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, GROUND, W, H-GROUND);
+  // grass tufts
+  ctx.strokeStyle = 'rgba(255,255,255,.16)'; ctx.lineWidth=2;
+  for(var i=0;i<60;i++){
+    var wx = i*80 + 20;
+    var x = wx - cam.x; if(x<-20||x>W+20) continue;
+    ctx.beginPath(); ctx.moveTo(x, GROUND+8); ctx.lineTo(x+3, GROUND+1); ctx.stroke();
+  }
+  // mud pools
+  mudpools.forEach(function(m){
+    var x = m.x - cam.x;
+    if(x+m.w < -40 || x-m.w > W+40) return;
+    ctx.fillStyle = '#5a3a1c';
+    ctx.beginPath(); ctx.ellipse(x, GROUND+16, m.w/2, 16, 0,0,7); ctx.fill();
+    ctx.fillStyle = 'rgba(140,95,50,.6)';
+    ctx.beginPath(); ctx.ellipse(x-10, GROUND+12, m.w/3, 7, 0,0,7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,236,205,.75)';
+    ctx.font = '700 12px ' + FU; ctx.textAlign='center';
+    ctx.fillText('MUD', x, GROUND+50);
+  });
+}
+
+function drawScenery(){
+  scenery.forEach(function(o){
+    var x = o.x - cam.x;
+    if(x < -120 || x > W+120) return;
+    if(o.t==='tree'){
+      var h = 70*o.s;
+      ctx.fillStyle = '#5b3d21';
+      ctx.fillRect(x-5*o.s, GROUND-h, 10*o.s, h);
+      var greens = ['#2f6b2c','#3a7f34','#285c26'];
+      ctx.fillStyle = greens[o.c];
+      ctx.beginPath(); ctx.arc(x, GROUND-h-6*o.s, 30*o.s, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(x-22*o.s, GROUND-h+12*o.s, 20*o.s, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(x+22*o.s, GROUND-h+10*o.s, 22*o.s, 0, 7); ctx.fill();
+    } else {
+      ctx.fillStyle = ['#356f2f','#417f38','#2d6029'][o.c];
+      ctx.beginPath(); ctx.ellipse(x, GROUND-4, 22*o.s, 15*o.s, 0,0,7); ctx.fill();
+    }
+  });
+}
+
+/* ============================================================
+   UPDATE
+   ============================================================ */
+function inMud(x){
+  for(var i=0;i<mudpools.length;i++){
+    if(Math.abs(x - mudpools[i].x) < mudpools[i].w/2) return true;
+  }
+  return false;
+}
+
+function hurtClay(n, fromX){
+  if(clay.invuln > 0) return;
+  clay.health -= n;
+  clay.invuln = 1.9;
+  shake = 12;
+  SFX.hurt();
+  puff(clay.x, clay.y, 10, '#ff6a4a', 3);
+  pop(clay.x, clay.y-40, 'OUCH!', '#ff8a6a');
+  clay.vx += (clay.x < fromX ? -1 : 1) * 6;
+  clay.vy -= 3;
+  if(clay.health <= 0){
+    clay.health = 0;
+    state = 'lose';
+    SFX.lose();
+  }
+}
+
+function eatCow(cow){
+  var pts = cow.roasted>0 ? 200 : 100;
+  var bonus = 0;
+  if(clay.fastDive > 0){ bonus = 50; }
+  score += pts + bonus;
+  eaten++;
+  hunger = clamp(hunger + (cow.roasted>0 ? 45 : 32), 0, 100);
+  clay.fireTime = 12;             // MudWings can only breathe fire after eating!
+  clay.chompT = 0.45;
+  SFX.chomp();
+  puff(clay.x, clay.y+10, 16, cow.roasted>0?'#c98b48':'#fff4e0', 3);
+  pop(clay.x, clay.y-46, (cow.roasted>0?'ROASTED COW! +':'YUM! +') + pts, cow.roasted>0?'#ffb347':'#fff');
+  if(bonus) pop(clay.x, clay.y-70, 'PERFECT DIVE +50', '#8ef0a8');
+  if(clay.health < clay.maxHealth && cow.roasted>0){
+    clay.health++; SFX.heal();
+    pop(clay.x, clay.y-92, '+1 HEART', '#ff9db3');
+  }
+  clay.carrying = null;
+  // the cow is gone for good
+  var idx = cows.indexOf(cow);
+  if(idx >= 0) cows.splice(idx, 1);
+  // keep the meadow stocked, and raise the stakes
+  spawnCow(clay.x);
+  if(eaten % 3 === 0) spawnSky();
+  if(eaten % 4 === 0) spawnScav();
+  if(eaten >= GOAL){
+    state = 'win';
+    SFX.win();
+  } else {
+    var lines = ['Delicious.','Clay is still hungry.','Reminds him of the cave.','Tundra would be jealous.','Fire time!'];
+    say(lines[irand(0,lines.length-1)]);
+  }
+}
+
+function update(dt){
+  timeAlive += dt;
+
+  /* ---------- CLAY ---------- */
+  var acc = 0.62, maxVX = 8.2, maxVY = 9;
+  if(clay.carrying){ acc = 0.46; maxVX = 6.2; maxVY = 7.5; }
+
+  if(held('arrowleft','a')){ clay.vx -= acc; clay.face = -1; }
+  if(held('arrowright','d')){ clay.vx += acc; clay.face = 1; }
+  if(held('arrowup','w')){
+    clay.vy -= 0.72;
+    clay.flap += dt*22;
+    if(Math.random()<0.10) SFX.flap();
+  } else {
+    clay.flap += dt*7;
+  }
+  if(held('arrowdown','s')) clay.vy += 0.62;
+
+  clay.vy += 0.26 + (clay.carrying ? 0.12 : 0);   // gravity
+  clay.vx *= 0.955; clay.vy *= 0.975;
+  clay.vx = clamp(clay.vx, -maxVX, maxVX);
+  clay.vy = clamp(clay.vy, -maxVY, maxVY);
+
+  clay.x += clay.vx; clay.y += clay.vy;
+  clay.x = clamp(clay.x, 60, WORLD_W-60);
+  if(clay.y < 40){ clay.y = 40; clay.vy = Math.max(0, clay.vy); }
+  var floorY = GROUND - 18;
+  var landed = false;
+  if(clay.y > floorY){
+    clay.y = floorY;
+    if(clay.vy > 5) puff(clay.x, GROUND, 8, '#c8b48a', 2);
+    clay.vy = 0; landed = true;
+    clay.vx *= 0.9;
+  }
+
+  clay.fastDive = Math.max(0, clay.fastDive - dt);
+  if(clay.vy > 6) clay.fastDive = 0.35;
+  clay.invuln  = Math.max(0, clay.invuln - dt);
+  clay.fireTime= Math.max(0, clay.fireTime - dt);
+  clay.chompT  = Math.max(0, clay.chompT - dt);
+
+  // mud healing
+  if(landed && inMud(clay.x)){
+    clay.mudT += dt;
+    if(clay.mudT > 1.6){
+      clay.mudT = 0;
+      if(clay.health < clay.maxHealth){
+        clay.health++; SFX.heal();
+        pop(clay.x, clay.y-40, '+1 HEART', '#ff9db3');
+        puff(clay.x, GROUND+6, 8, '#7a5128', 2);
+      }
+    }
+  } else clay.mudT = 0;
+
+  // hunger
+  hunger -= dt * 2.6;
+  if(hunger <= 0){
+    hunger = 0;
+    starveT += dt;
+    if(starveT >= 3.5){
+      starveT = 0;
+      clay.invuln = 0;                 // an empty belly always bites
+      hurtClay(1, clay.x);
+      pop(clay.x, clay.y-64, 'STARVING!', '#ffd24a');
+    }
+  } else {
+    starveT = 0;
+    if(hunger < 25 && !warnedHunger){
+      warnedHunger = true;
+      say('Clay is getting REALLY hungry — find a cow!', '#ffd24a');
+    }
+    if(hunger > 45) warnedHunger = false;
+  }
+
+  /* ---------- CARRY / CHOMP ---------- */
+  if(clay.carrying){
+    var cw = clay.carrying;
+    cw.x = clay.x - clay.face*10;
+    cw.y = clay.y + 36;
+    cw.wobble += dt*18;
+    if(tapped(' ')) eatCow(cw);
+  }
+
+  /* ---------- FIRE ---------- */
+  if(tapped('f')){
+    if(clay.fireTime > 0){
+      fires.push({
+        x: clay.x + clay.face*44, y: clay.y - 18,
+        vx: clay.face*12 + clay.vx*0.3, vy: clay.vy*0.25 + 0.4,
+        life: 1.5, r: 9
+      });
+      SFX.fire();
+      clay.vx -= clay.face*0.9;
+    } else {
+      pop(clay.x, clay.y-48, 'NO FIRE - EAT FIRST!', '#ffcf6a');
+      beep(120,0.12,'square',0.06,80);
+    }
+  }
+
+  /* ---------- COWS ---------- */
+  for(var i=cows.length-1;i>=0;i--){
+    var c = cows[i];
+    if(c === clay.carrying) continue;
+    var d = Math.abs(c.x - clay.x);
+    var vert = clay.y < GROUND - 30;
+    if(d < 300 && clay.y > 150){
+      if(c.panic <= 0) SFX.moo();
+      c.panic = 1.6;
+      var flee = (c.x < clay.x ? -1 : 1) * 4.6;
+      // a cornered cow jinks the other way to dodge the swoop
+      if(d < 130 && Math.random() < 0.05) c.jink = 0.5;
+      c.jink = Math.max(0, (c.jink||0) - dt);
+      c.vx = c.jink > 0 ? -flee : flee;
+    } else {
+      c.panic = Math.max(0, c.panic - dt);
+      if(c.panic <= 0){
+        if(Math.random() < 0.004) c.vx = -c.vx;
+        c.vx = clamp(c.vx, -0.9, 0.9);
+        if(Math.abs(c.vx) < 0.2) c.vx = Math.random()<0.5?-0.7:0.7;
+      }
+    }
+    c.x += c.vx;
+    c.wobble += dt*(3 + Math.abs(c.vx)*2.5);
+    if(c.x < 80){ c.x = 80; c.vx = Math.abs(c.vx); }
+    if(c.x > WORLD_W-80){ c.x = WORLD_W-80; c.vx = -Math.abs(c.vx); }
+    if(c.roasted > 0) c.roasted -= dt*0.02;
+
+    // grab
+    if(!clay.carrying && aabb(clay, c)){
+      clay.carrying = c;
+      SFX.grab(); SFX.moo();
+      pop(c.x, c.y-34, 'MOO!', '#fff');
+      puff(c.x, c.y, 8, '#ffffff', 2);
+      say('Caught one! Press SPACE to chomp.', '#c8f7a0');
+      cows.splice(i,1);
+      cows.push(c);   // keep in list, drawn last
+    }
+  }
+
+  /* ---------- FIREBALLS ---------- */
+  for(var f=fires.length-1; f>=0; f--){
+    var fb = fires[f];
+    fb.x += fb.vx; fb.y += fb.vy; fb.vy += 0.16;
+    fb.life -= dt;
+    parts.push({x:fb.x, y:fb.y, vx:rand(-.6,.6), vy:rand(-.8,0),
+      life:0.35, max:0.35, r:rand(3,8),
+      col: Math.random()<0.5?'#ffb03a':'#ff6a1f', grav:-0.02});
+    var gone = fb.life<=0 || fb.y > GROUND+4 || fb.x < cam.x-200 || fb.x > cam.x+W+200;
+
+    if(!gone){
+      // hit cows -> roast
+      for(var ci=0; ci<cows.length; ci++){
+        var cc = cows[ci];
+        if(cc===clay.carrying) continue;
+        if(cc.roasted<=0 && dist(fb.x,fb.y,cc.x,cc.y) < 34){
+          cc.roasted = 1;
+          pop(cc.x, cc.y-40, 'ROASTED!', '#ffb347');
+          puff(cc.x, cc.y, 14, '#ff8a2a', 3);
+          SFX.moo();
+          gone = true; break;
+        }
+      }
+    }
+    if(!gone){
+      for(var si=scavs.length-1; si>=0; si--){
+        var sv = scavs[si];
+        if(dist(fb.x,fb.y,sv.x,sv.y) < 28){
+          sv.hp--; sv.hurt = 0.4; gone = true;
+          puff(sv.x, sv.y, 10, '#ffb03a', 3);
+          if(sv.hp<=0){
+            scavs.splice(si,1); score += 40;
+            pop(sv.x, sv.y-30, 'SCARED OFF +40', '#ffe08a');
+          }
+          break;
+        }
+      }
+    }
+    if(!gone){
+      for(var ki=skywings.length-1; ki>=0; ki--){
+        var sk = skywings[ki];
+        if(dist(fb.x,fb.y,sk.x,sk.y) < 40){
+          sk.hp--; sk.hurt = 0.4; sk.stun = 1.2; gone = true;
+          puff(sk.x, sk.y, 12, '#ffd06a', 3.5);
+          if(sk.hp<=0){
+            skywings.splice(ki,1); score += 150;
+            pop(sk.x, sk.y-40, 'SKYWING DOWN +150', '#ffd06a');
+            puff(sk.x, sk.y, 22, '#ff7a3a', 4);
+          }
+          break;
+        }
+      }
+    }
+    if(gone){
+      puff(fb.x, fb.y, 6, '#ffbe4a', 2);
+      fires.splice(f,1);
+    }
+  }
+
+  /* ---------- SCAVENGERS ---------- */
+  scavs.forEach(function(s){
+    s.hurt = Math.max(0, s.hurt-dt);
+    s.x += s.vx;
+    if(s.x<80){s.x=80;s.vx=Math.abs(s.vx);}
+    if(s.x>WORLD_W-80){s.x=WORLD_W-80;s.vx=-Math.abs(s.vx);}
+    var dd = dist(s.x,s.y,clay.x,clay.y);
+    s.cool -= dt;
+    if(dd < 330 && s.cool <= 0){
+      s.cool = rand(1.8, 3.2);
+      var ang = Math.atan2(clay.y - s.y, (clay.x + clay.vx*8) - s.x);
+      spears.push({x:s.x, y:s.y-24, vx:Math.cos(ang)*7.2, vy:Math.sin(ang)*7.2, life:2.4});
+      beep(700,0.07,'triangle',0.05,300);
+      s.vx = (clay.x > s.x ? 0.55 : -0.55);
+    }
+  });
+
+  /* ---------- SPEARS ---------- */
+  for(var p=spears.length-1;p>=0;p--){
+    var sp = spears[p];
+    sp.x += sp.vx; sp.y += sp.vy; sp.vy += 0.14; sp.life -= dt;
+    if(dist(sp.x,sp.y,clay.x,clay.y) < 30){
+      hurtClay(1, sp.x); spears.splice(p,1); continue;
+    }
+    if(sp.life<=0 || sp.y>GROUND+6){ spears.splice(p,1); }
+  }
+
+  /* ---------- SKYWINGS ---------- */
+  skywings.forEach(function(k){
+    k.hurt = Math.max(0,k.hurt-dt);
+    k.stun = Math.max(0,k.stun-dt);
+    k.flap += dt*10;
+    var dd = dist(k.x,k.y,clay.x,clay.y);
+    k.recover = Math.max(0, k.recover - dt);
+    if(k.stun>0){
+      k.vy += 0.3; k.vx *= 0.95;
+    } else if(k.recover > 0){
+      // back off after a hit so Clay gets a chance to escape
+      k.vx += (k.x < clay.x ? -0.2 : 0.2);
+      k.vy += (k.baseY - k.y)*0.012;
+      k.diveT = 0;
+    } else if(dd < 300){
+      k.diveT = 1.0;
+      var a = Math.atan2(clay.y-k.y, clay.x-k.x);
+      k.vx += Math.cos(a)*0.22;
+      k.vy += Math.sin(a)*0.22;
+    } else {
+      k.diveT = Math.max(0,k.diveT-dt);
+      k.vy += (k.baseY - k.y)*0.006;
+      if(Math.abs(k.vx) < 1.4) k.vx += (k.vx<0?-0.1:0.1);
+    }
+    k.vx = clamp(k.vx*0.985, -4.8, 4.8);
+    k.vy = clamp(k.vy*0.97, -4.2, 4.2);
+    k.x += k.vx; k.y += k.vy;
+    if(k.x<80){k.x=80;k.vx=Math.abs(k.vx);}
+    if(k.x>WORLD_W-80){k.x=WORLD_W-80;k.vx=-Math.abs(k.vx);}
+    if(k.y<50){k.y=50;k.vy=Math.abs(k.vy)*0.4;}
+    if(k.y>GROUND-40){k.y=GROUND-40;k.vy=-Math.abs(k.vy)*0.6;}
+    if(dd < 40 && clay.invuln <= 0){
+      hurtClay(1, k.x);
+      k.recover = 2.6;                       // the SkyWing veers off
+      k.vx = (k.x < clay.x ? -1 : 1) * 4;
+      k.vy = -2.5;
+    }
+  });
+
+  /* ---------- particles + floats ---------- */
+  for(var q=parts.length-1;q>=0;q--){
+    var pt = parts[q];
+    pt.x += pt.vx; pt.y += pt.vy; pt.vy += pt.grav;
+    pt.life -= dt;
+    if(pt.life<=0) parts.splice(q,1);
+  }
+  for(var r=floats.length-1;r>=0;r--){
+    var fo = floats[r];
+    fo.y -= 34*dt; fo.life -= dt;
+    if(fo.life<=0) floats.splice(r,1);
+  }
+
+  msgT = Math.max(0, msgT-dt);
+  shake *= 0.86;
+
+  /* ---------- camera ---------- */
+  var target = clamp(clay.x - W/2 + clay.face*70, 0, WORLD_W - W);
+  cam.x += (target - cam.x) * 0.12;
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function drawHUD(){
+  // panel
+  ctx.fillStyle = 'rgba(30,18,10,.55)';
+  ctx.fillRect(10,10, 300, 92);
+  ctx.strokeStyle = 'rgba(255,220,150,.4)'; ctx.lineWidth=2;
+  ctx.strokeRect(10,10, 300, 92);
+
+  // hearts
+  for(var i=0;i<clay.maxHealth;i++){
+    var hx = 26 + i*30, hy = 32;
+    ctx.fillStyle = i < clay.health ? '#ff4d6d' : 'rgba(255,255,255,.18)';
+    ctx.beginPath();
+    ctx.moveTo(hx, hy+8);
+    ctx.bezierCurveTo(hx-12, hy-2, hx-6, hy-12, hx, hy-5);
+    ctx.bezierCurveTo(hx+6, hy-12, hx+12, hy-2, hx, hy+8);
+    ctx.fill();
+  }
+
+  // hunger bar
+  ctx.fillStyle = '#ffeccd'; ctx.font='700 13px ' + FU; ctx.textAlign='left';
+  ctx.fillText('HUNGER', 24, 58);
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(84, 47, 200, 12);
+  var hg = hunger/100;
+  ctx.fillStyle = hg>0.5 ? '#7bd45c' : (hg>0.22 ? '#ffc94a' : '#ff5a4a');
+  ctx.fillRect(85, 48, 198*hg, 10);
+
+  // fire meter
+  ctx.fillStyle = '#ffeccd';
+  ctx.fillText('FIRE', 24, 80);
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(84, 69, 200, 12);
+  if(clay.fireTime>0){
+    ctx.fillStyle = '#ff9425';
+    ctx.fillRect(85, 70, 198*(clay.fireTime/12), 10);
+    ctx.fillStyle='#fff8e6'; ctx.font='700 12px ' + FU; ctx.textAlign='center';
+    ctx.lineWidth=3; ctx.strokeStyle='rgba(60,25,0,.75)';
+    ctx.strokeText('BELLY FULL — PRESS F', 184, 79);
+    ctx.fillText('BELLY FULL — PRESS F', 184, 79);
+  } else {
+    ctx.fillStyle='rgba(255,236,205,.6)'; ctx.font='700 12px ' + FU; ctx.textAlign='center';
+    ctx.fillText('EAT A COW TO BREATHE FIRE', 184, 79);
+  }
+
+  // cow counter
+  ctx.textAlign='right';
+  ctx.fillStyle = 'rgba(30,18,10,.55)';
+  ctx.fillRect(W-230,10, 220, 62);
+  ctx.strokeStyle = 'rgba(255,220,150,.4)'; ctx.strokeRect(W-230,10,220,62);
+  ctx.fillStyle='#ffeccd'; ctx.font='700 23px ' + FU;
+  ctx.fillText('COWS  ' + eaten + ' / ' + GOAL, W-24, 36);
+  ctx.font='700 17px ' + FU; ctx.fillStyle='#ffd98a';
+  ctx.fillText('SCORE  ' + score, W-24, 60);
+
+  // message
+  if(msgT>0){
+    ctx.globalAlpha = Math.min(1, msgT);
+    ctx.textAlign='center'; ctx.font='700 21px ' + FU;
+    ctx.fillStyle='rgba(30,18,10,.6)';
+    ctx.fillRect(W/2-190, H-56, 380, 30);
+    ctx.fillStyle=msgCol;
+    ctx.fillText(msg, W/2, H-35);
+    ctx.globalAlpha = 1;
+  }
+
+  // offscreen cow arrows
+  ctx.textAlign='center';
+  cows.forEach(function(c){
+    if(c===clay.carrying) return;
+    var sx = c.x - cam.x;
+    if(sx < 0){
+      ctx.fillStyle='rgba(255,255,255,.75)';
+      ctx.beginPath(); ctx.moveTo(14, GROUND-60); ctx.lineTo(30, GROUND-70); ctx.lineTo(30, GROUND-50); ctx.closePath(); ctx.fill();
+    } else if(sx > W){
+      ctx.fillStyle='rgba(255,255,255,.75)';
+      ctx.beginPath(); ctx.moveTo(W-14, GROUND-60); ctx.lineTo(W-30, GROUND-70); ctx.lineTo(W-30, GROUND-50); ctx.closePath(); ctx.fill();
+    }
+  });
+}
+
+function drawParts(){
+  parts.forEach(function(p){
+    ctx.globalAlpha = clamp(p.life/p.max,0,1);
+    ctx.fillStyle = p.col;
+    ctx.beginPath(); ctx.arc(p.x-cam.x, p.y, p.r, 0, 7); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+function drawFloats(){
+  ctx.textAlign='center'; ctx.font='700 19px ' + FU;
+  floats.forEach(function(f){
+    ctx.globalAlpha = clamp(f.life,0,1);
+    ctx.lineWidth = 4; ctx.strokeStyle='rgba(0,0,0,.55)';
+    ctx.strokeText(f.txt, f.x-cam.x, f.y);
+    ctx.fillStyle = f.col;
+    ctx.fillText(f.txt, f.x-cam.x, f.y);
+  });
+  ctx.globalAlpha = 1;
+}
+
+function render(){
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,W,H);
+  var sx = (Math.random()-0.5)*shake, sy = (Math.random()-0.5)*shake;
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  drawSky();
+  drawClouds();
+  drawMountains();
+  drawGround();
+  drawScenery();
+
+  // spears
+  spears.forEach(function(s){
+    var a = Math.atan2(s.vy,s.vx);
+    ctx.save(); ctx.translate(s.x-cam.x, s.y); ctx.rotate(a);
+    ctx.strokeStyle='#8a6b3d'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(-14,0); ctx.lineTo(10,0); ctx.stroke();
+    ctx.fillStyle='#cfd4da';
+    ctx.beginPath(); ctx.moveTo(10,0); ctx.lineTo(2,-4); ctx.lineTo(2,4); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  });
+
+  scavs.forEach(drawScav);
+  cows.forEach(drawCow);
+
+  // skywings
+  skywings.forEach(function(k){
+    if(k.hurt>0 && Math.floor(k.hurt*30)%2===0) ctx.globalAlpha=0.5;
+    drawDragon(k.x-cam.x, k.y, k.vx<0?-1:1, k.flap, 0.85, SKY_COLORS, k.stun>0?'#ffd06a':null);
+    ctx.globalAlpha=1;
+    // angry marker
+    if(k.diveT>0){
+      ctx.fillStyle='#ffe14a'; ctx.font='700 20px ' + FU; ctx.textAlign='center';
+      ctx.fillText('!', k.x-cam.x, k.y-52);
+    }
+  });
+
+  drawParts();
+
+  // Clay
+  var blink = clay.invuln>0 && Math.floor(clay.invuln*20)%2===0;
+  if(!blink){
+    drawDragon(clay.x-cam.x, clay.y, clay.face, clay.flap, 1, CLAY_COLORS,
+               clay.fireTime>0 ? 'rgba(255,140,40,.9)' : null);
+    // chomp flash
+    if(clay.chompT>0){
+      ctx.fillStyle='rgba(255,255,255,'+(clay.chompT*1.4)+')';
+      ctx.beginPath(); ctx.arc(clay.x-cam.x + clay.face*52, clay.y-18, 26*clay.chompT+8, 0, 7); ctx.fill();
+    }
+  }
+  // fireballs
+  fires.forEach(function(f){
+    var g = ctx.createRadialGradient(f.x-cam.x, f.y, 1, f.x-cam.x, f.y, f.r*1.8);
+    g.addColorStop(0,'#fff3b0'); g.addColorStop(0.45,'#ff9a2a'); g.addColorStop(1,'rgba(255,80,20,0)');
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(f.x-cam.x, f.y, f.r*1.8, 0, 7); ctx.fill();
+  });
+
+  drawFloats();
+  ctx.restore();
+  drawHUD();
+}
+
+/* ============================================================
+   SCREENS
+   ============================================================ */
+function panel(x,y,w,h){
+  ctx.fillStyle='rgba(26,16,8,.86)';
+  ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle='#e6a93c'; ctx.lineWidth=3;
+  ctx.strokeRect(x,y,w,h);
+}
+
+var titleT = 0;
+function drawTitle(){
+  drawSky(); drawClouds(); drawMountains();
+  mudpools = mudpools || []; drawGround(); drawScenery();
+
+  // decorative Clay
+  drawDragon(200, 300 + Math.sin(titleT*2)*14, 1, titleT*6, 1.5, CLAY_COLORS, 'rgba(255,140,40,.5)');
+  // decorative cow
+  drawCow({x:cam.x+130, y:GROUND-20, vx:-1, wobble:titleT*3, panic:1, roasted:0});
+
+  panel(290, 50, 620, 428);
+  ctx.textAlign='center';
+  ctx.fillStyle='#ffcf6a'; ctx.font='700 30px ' + FD;
+  ctx.fillText('HOW TO HUNT', 600, 110);
+  ctx.fillStyle='#ffeccd'; ctx.font='italic 17px ' + FU;
+  ctx.fillText('a Wings of Fire adventure', 600, 138);
+
+  ctx.font='16px ' + FU; ctx.textAlign='left';
+  var lines = [
+    'You are CLAY, the MudWing. You are hungry. You are',
+    'always hungry. Eat ' + GOAL + ' cows to finish the hunt.',
+    '',
+    'ARROWS / WASD .... fly (hold UP to flap, DOWN to dive)',
+    'TOUCH A COW ...... grab it in your claws',
+    'SPACE ............ CHOMP the cow you are carrying',
+    'F ................ breathe fire (only after eating!)',
+    '',
+    'Roast a cow with fire first = double points + a heart.',
+    'Dive fast when you grab = PERFECT DIVE bonus.',
+    'Sit in a MUD pool on the ground to heal.',
+    'Watch out for SkyWings and scavenger spears.'
+  ];
+  lines.forEach(function(l,i){ ctx.fillText(l, 332, 176 + i*20); });
+
+  ctx.textAlign='center';
+  ctx.fillStyle = Math.sin(titleT*6)>0 ? '#8ef0a8' : '#4fae6a';
+  ctx.font='700 22px ' + FD;
+  ctx.fillText(isTouch ? 'TAP TO START' : 'PRESS ENTER TO FLY', 600, 452);
+}
+
+function rank(){
+  if(score >= 2200) return 'DRAGONET OF DESTINY';
+  if(score >= 1600) return 'BIGWINGS';
+  if(score >= 1100) return 'MUD KINGDOM CHAMPION';
+  if(score >= 700)  return 'GOOD BROTHER';
+  return 'STILL HUNGRY';
+}
+
+function drawEnd(won){
+  render();
+  ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(0,0,W,H);
+  panel(280, 110, 400, 320);
+  ctx.textAlign='center';
+  if(won){
+    ctx.fillStyle='#8ef0a8'; ctx.font='700 34px ' + FD;
+    ctx.fillText('FULL AT LAST!', 480, 172);
+    ctx.fillStyle='#ffeccd'; ctx.font='17px ' + FU;
+    ctx.fillText('Clay ate ' + eaten + ' cows and flopped over,', 480, 208);
+    ctx.fillText('perfectly, wonderfully stuffed.', 480, 230);
+  } else {
+    ctx.fillStyle='#ff8a6a'; ctx.font='700 34px ' + FD;
+    ctx.fillText('CLAY IS DOWN', 480, 172);
+    ctx.fillStyle='#ffeccd'; ctx.font='17px ' + FU;
+    ctx.fillText('He crawls back to the mud to rest.', 480, 208);
+    ctx.fillText('Cows eaten: ' + eaten + ' / ' + GOAL, 480, 230);
+  }
+  ctx.fillStyle='#ffd98a'; ctx.font='700 26px ' + FD;
+  ctx.fillText('SCORE  ' + score, 480, 280);
+  ctx.fillStyle='#ffcf6a'; ctx.font='700 18px ' + FD;
+  ctx.fillText('RANK: ' + rank(), 480, 314);
+  ctx.fillStyle='#ffeccd'; ctx.font='15px ' + FU;
+  ctx.fillText('Time: ' + timeAlive.toFixed(1) + 's', 480, 342);
+  ctx.fillStyle = Math.sin(titleT*6)>0 ? '#8ef0a8' : '#4fae6a';
+  ctx.font='700 21px ' + FD;
+  ctx.fillText(isTouch ? 'TAP TO HUNT AGAIN' : 'PRESS ENTER TO HUNT AGAIN', 480, 396);
+}
+
+/* ============================================================
+   MAIN LOOP
+   ============================================================ */
+reset();
+state = 'title';
+
+// small debug hook (handy for testing; harmless in play)
+window.__clayDebug = {
+  get state(){ return state; },
+  get clay(){ return clay; },
+  get cows(){ return cows; },
+  get skywings(){ return skywings; },
+  get spears(){ return spears; },
+  get hunger(){ return hunger; },
+  get eaten(){ return eaten; },
+  get score(){ return score; }
+};
+
+var last = performance.now();
+function loop(now){
+  var dt = Math.min(0.05, (now - last)/1000);
+  last = now;
+  titleT += dt;
+
+  if(state === 'title'){
+    drawTitle();
+    if(tapped('enter') || tapped(' ')){ reset(); state='play'; }
+  } else if(state === 'play'){
+    update(dt);
+    render();
+  } else {
+    drawEnd(state === 'win');
+    if(tapped('enter') || tapped(' ')){ reset(); state='play'; }
+  }
+
+  // clear one-frame taps that nothing consumed
+  pressed = {};
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
